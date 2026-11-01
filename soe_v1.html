@@ -1,0 +1,747 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SOE — Servicio de Orientación Escolar · FASTA JP II</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.8/dist/umd/supabase.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --pri:#6a3b8a;--pri-dark:#4a2862;--accent:#8a5baa;
+  --bg:#f5f7f9;--card:#ffffff;--text:#2d3e46;--text2:#5a6b74;--text3:#8a9aa3;
+  --border:#dde5e9;--green:#2e7d4a;--blue:#1a6ba3;--orange:#c9850a;
+  --red:#a34434;--yellow:#f0b429;--purple:#6a3b8a;
+}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+  background:var(--bg);color:var(--text);min-height:100vh}
+.top-nav{background:var(--pri);color:white;padding:12px 20px;
+  display:flex;align-items:center;justify-content:space-between;
+  box-shadow:0 2px 6px rgba(0,0,0,0.1);position:sticky;top:0;z-index:50}
+.top-nav h1{font-size:17px;font-weight:700}
+.top-nav .user{font-size:12px;opacity:0.9;display:flex;align-items:center;gap:10px}
+.top-nav button{background:rgba(255,255,255,0.15);color:white;border:1px solid rgba(255,255,255,0.3);
+  padding:4px 12px;border-radius:14px;cursor:pointer;font-size:11px;font-weight:600}
+
+.container{max-width:1300px;margin:0 auto;padding:16px}
+.conf-banner{background:#fff3cd;color:#856404;padding:8px 14px;border-radius:6px;
+  font-size:12px;margin-bottom:14px;border-left:3px solid var(--yellow)}
+.conf-banner strong{display:block;margin-bottom:2px}
+
+.toolbar{background:white;border-radius:10px;padding:14px;box-shadow:0 1px 4px rgba(0,0,0,0.06);
+  margin-bottom:16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.toolbar label{font-size:12px;font-weight:600;color:var(--text2)}
+.toolbar select,.toolbar input{padding:7px 10px;border:1px solid var(--border);border-radius:6px;
+  font-size:13px;font-family:inherit;color:var(--text)}
+.toolbar input{min-width:200px;flex:1;max-width:300px}
+.btn{padding:7px 14px;border:1px solid var(--border);background:white;border-radius:6px;
+  cursor:pointer;font-size:12px;font-weight:600;color:var(--text2);font-family:inherit}
+.btn:hover{background:var(--bg)}
+.btn-pri{background:var(--pri);color:white;border-color:var(--pri)}
+.btn-pri:hover{background:var(--pri-dark)}
+.btn-green{background:var(--green);color:white;border-color:var(--green)}
+.btn-green:hover{background:#245f38}
+.btn-red{background:var(--red);color:white;border-color:var(--red)}
+.btn-xs{padding:3px 8px;font-size:11px}
+.btn-sm{padding:5px 11px;font-size:12px}
+
+.casos-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:12px}
+.caso-card{background:white;border-radius:10px;padding:14px;box-shadow:0 1px 4px rgba(0,0,0,0.06);
+  cursor:pointer;transition:all .15s;border-left:4px solid var(--border)}
+.caso-card:hover{transform:translateY(-2px);box-shadow:0 4px 12px rgba(0,0,0,0.08)}
+.caso-card.prio-urgente{border-left-color:var(--red)}
+.caso-card.prio-alta{border-left-color:var(--orange)}
+.caso-card.prio-media{border-left-color:var(--yellow)}
+.caso-card.prio-baja{border-left-color:var(--blue)}
+.caso-card .titulo{font-size:14px;font-weight:700;color:var(--text);margin-bottom:4px}
+.caso-card .alumno{font-size:12px;color:var(--text2);margin-bottom:6px}
+.caso-card .meta{display:flex;gap:5px;flex-wrap:wrap;margin-top:8px}
+.caso-card .fecha{font-size:11px;color:var(--text3);margin-top:6px}
+
+.chip{display:inline-block;font-size:10px;padding:2px 7px;border-radius:9px;font-weight:700;letter-spacing:.3px}
+.chip-area-ap{background:#cfe2ff;color:#084298}
+.chip-area-vc{background:#e2d9f3;color:#432874}
+.chip-area-ec{background:#f8d7da;color:#721c24}
+.chip-area-fd{background:#d4edda;color:#155724}
+.chip-prio-u{background:#dc3545;color:white}
+.chip-prio-a{background:#fd7e14;color:white}
+.chip-prio-m{background:#ffc107;color:#333}
+.chip-prio-b{background:#17a2b8;color:white}
+.chip-est-ab{background:#d1ecf1;color:#0c5460}
+.chip-est-se{background:#fff3cd;color:#856404}
+.chip-est-de{background:#e2d9f3;color:#432874}
+.chip-est-ce{background:#e9ecef;color:#495057}
+
+.empty{text-align:center;padding:50px 20px;color:var(--text3)}
+.empty .emoji{font-size:60px;margin-bottom:12px}
+
+/* Login */
+#loginOverlay{position:fixed;inset:0;background:rgba(74,101,114,0.98);
+  display:flex;align-items:center;justify-content:center;z-index:200}
+.login-box{background:white;border-radius:14px;padding:30px 28px;max-width:360px;width:90%;
+  box-shadow:0 10px 40px rgba(0,0,0,0.2)}
+.login-box h2{color:var(--pri);text-align:center;margin-bottom:4px;font-size:19px}
+.login-box .sub{text-align:center;color:var(--text2);font-size:12px;margin-bottom:20px}
+.login-box label{display:block;font-size:12px;font-weight:600;color:var(--text2);margin-bottom:4px}
+.login-box input{width:100%;padding:9px 11px;border:1px solid var(--border);border-radius:7px;
+  font-size:13px;margin-bottom:12px}
+.login-box button{width:100%;padding:10px;background:var(--pri);color:white;border:none;
+  border-radius:7px;font-size:13px;font-weight:700;cursor:pointer}
+.login-error{background:#fee;color:var(--red);padding:7px 10px;border-radius:5px;
+  font-size:12px;margin-bottom:10px;display:none}
+
+/* Modales */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.5);
+  display:flex;align-items:center;justify-content:center;z-index:100;padding:20px;overflow-y:auto}
+.modal{background:white;border-radius:12px;max-width:700px;width:100%;max-height:90vh;
+  display:flex;flex-direction:column;overflow:hidden}
+.modal.big{max-width:900px}
+.modal-head{background:var(--pri);color:white;padding:14px 18px;display:flex;justify-content:space-between;align-items:center}
+.modal-head h3{font-size:15px;font-weight:700}
+.modal-close{background:none;border:none;color:white;font-size:18px;cursor:pointer;padding:0 6px}
+.modal-body{padding:18px;overflow-y:auto;flex:1}
+.modal-foot{padding:12px 18px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px}
+.form-row{margin-bottom:12px}
+.form-row label{display:block;font-size:12px;font-weight:600;color:var(--text2);margin-bottom:4px}
+.form-row input,.form-row select,.form-row textarea{width:100%;padding:8px 10px;border:1px solid var(--border);
+  border-radius:6px;font-size:13px;font-family:inherit;color:var(--text)}
+.form-row textarea{min-height:80px;resize:vertical}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+
+/* Detalle del caso */
+.caso-detalle-head{background:#f5f8fa;padding:14px 18px;border-bottom:1px solid var(--border)}
+.caso-detalle-head .titulo{font-size:17px;font-weight:700;color:var(--text);margin-bottom:4px}
+.caso-detalle-head .alumno{font-size:13px;color:var(--text2);margin-bottom:8px}
+.caso-detalle-head .meta{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+.caso-detalle-section{padding:14px 18px;border-bottom:1px solid var(--border)}
+.caso-detalle-section h4{font-size:12px;font-weight:700;color:var(--text2);
+  text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px}
+.motivo-box{background:#fafbfc;padding:10px;border-radius:6px;font-size:13px;color:var(--text);line-height:1.5}
+
+.entrada{background:white;border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:10px}
+.entrada-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;gap:8px;flex-wrap:wrap}
+.entrada-head .tipo{font-size:11px;font-weight:700;color:var(--pri);text-transform:uppercase;letter-spacing:.3px}
+.entrada-head .fecha{font-size:11px;color:var(--text3)}
+.entrada .partic{font-size:11px;color:var(--text2);margin-bottom:6px}
+.entrada .desc{font-size:13px;color:var(--text);line-height:1.5;margin-bottom:6px}
+.entrada .acuerdos{background:#f0f9ff;padding:7px 10px;border-radius:5px;font-size:12px;color:var(--text);margin-top:6px;border-left:3px solid var(--blue)}
+.entrada .proxima{background:#fff8e6;padding:7px 10px;border-radius:5px;font-size:12px;color:var(--text);margin-top:6px;border-left:3px solid var(--yellow)}
+
+.adjuntos-list{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.adjunto-chip{background:#eef2f6;color:var(--text);padding:4px 10px;border-radius:12px;font-size:11px;
+  cursor:pointer;border:1px solid var(--border);display:inline-flex;align-items:center;gap:4px}
+.adjunto-chip:hover{background:var(--bg);border-color:var(--pri)}
+
+@media (max-width:650px){
+  .casos-grid{grid-template-columns:1fr}
+  .form-grid{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+
+<!-- Login -->
+<div id="loginOverlay">
+  <div class="login-box">
+    <h2>🔐 SOE</h2>
+    <div class="sub">Servicio de Orientación Escolar · FASTA Juan Pablo II</div>
+    <div class="login-error" id="loginError"></div>
+    <label>Email</label>
+    <input type="email" id="loginEmail" placeholder="docente@juanpablo2.redfasta.edu.ar">
+    <label>Contraseña</label>
+    <input type="password" id="loginPass" placeholder="••••••••">
+    <button id="btnLogin" onclick="hacerLogin()">Ingresar</button>
+  </div>
+</div>
+
+<!-- Nav superior -->
+<nav class="top-nav" id="topNav" style="display:none">
+  <h1>🧭 SOE — Servicio de Orientación Escolar</h1>
+  <div class="user">
+    <span id="userLabel">—</span>
+    <button onclick="cerrarSesion()">Salir</button>
+  </div>
+</nav>
+
+<div class="container" id="main" style="display:none">
+  <div class="conf-banner">
+    <strong>🔒 Información confidencial — Ley 25.326</strong>
+    Los casos y adjuntos de SOE contienen datos sensibles. Compartir solo con quien corresponda del equipo profesional.
+  </div>
+
+  <!-- Toolbar: filtros + nuevo caso -->
+  <div class="toolbar">
+    <label>Estado:</label>
+    <select id="filtroEstado" onchange="renderCasos()">
+      <option value="activos">Activos (abiertos + seguimiento)</option>
+      <option value="todos">Todos</option>
+      <option value="abierto">Abiertos</option>
+      <option value="en_seguimiento">En seguimiento</option>
+      <option value="derivado">Derivados</option>
+      <option value="cerrado">Cerrados</option>
+    </select>
+
+    <label>Área:</label>
+    <select id="filtroArea" onchange="renderCasos()">
+      <option value="">Todas</option>
+      <option value="academico_psicopedagogico">Académico/Psicopedagógico</option>
+      <option value="vocacional">Vocacional</option>
+      <option value="emocional_convivencial">Emocional/Convivencial</option>
+      <option value="familia_docentes">Familia/Docentes</option>
+    </select>
+
+    <label>Prioridad:</label>
+    <select id="filtroPrio" onchange="renderCasos()">
+      <option value="">Todas</option>
+      <option value="urgente">🔴 Urgente</option>
+      <option value="alta">🟠 Alta</option>
+      <option value="media">🟡 Media</option>
+      <option value="baja">🔵 Baja</option>
+    </select>
+
+    <label>Buscar:</label>
+    <input type="text" id="filtroBusqueda" placeholder="Alumno, título..." oninput="renderCasos()">
+
+    <button class="btn btn-pri" id="btnNuevoCaso" onclick="abrirModalNuevoCaso()">+ Nuevo caso</button>
+  </div>
+
+  <div id="contenidoCasos">
+    <div class="empty"><div class="emoji">⏳</div><p>Cargando casos...</p></div>
+  </div>
+</div>
+
+<script>
+// ========================================================
+// SOE — Servicio de Orientación Escolar · FASTA JP II
+// ========================================================
+const SB_URL = "https://navsfrfgyyjxckmincmb.supabase.co";
+const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5hdnNmcmZneXlqeGNrbWluY21iIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg3MDg0ODAsImV4cCI6MjEwNDI4NDQ4MH0.IWCyH9HvskRRU6pG4e2_1BvQI84qPnSnBmiQBa_q45o";
+
+let sb = null, usuarioActual = null, misAsignaciones = [], todasAsignaciones = [];
+let alumnos = [], casos = [], aMap = {};
+
+if(window.supabase && window.supabase.createClient) sb = window.supabase.createClient(SB_URL, SB_KEY);
+
+const AREAS = {
+  'academico_psicopedagogico': {label:'Académico/Psicopedagógico', cls:'chip-area-ap', emoji:'📚'},
+  'vocacional': {label:'Vocacional', cls:'chip-area-vc', emoji:'🎓'},
+  'emocional_convivencial': {label:'Emocional/Convivencial', cls:'chip-area-ec', emoji:'💛'},
+  'familia_docentes': {label:'Familia/Docentes', cls:'chip-area-fd', emoji:'👨‍👩‍👧'}
+};
+const PRIORIDADES = {
+  'urgente':{label:'Urgente', cls:'chip-prio-u', emoji:'🔴'},
+  'alta':{label:'Alta', cls:'chip-prio-a', emoji:'🟠'},
+  'media':{label:'Media', cls:'chip-prio-m', emoji:'🟡'},
+  'baja':{label:'Baja', cls:'chip-prio-b', emoji:'🔵'}
+};
+const ESTADOS = {
+  'abierto':{label:'Abierto', cls:'chip-est-ab'},
+  'en_seguimiento':{label:'En seguimiento', cls:'chip-est-se'},
+  'derivado':{label:'Derivado', cls:'chip-est-de'},
+  'cerrado':{label:'Cerrado', cls:'chip-est-ce'}
+};
+const TIPOS_ENTRADA = {
+  'intervencion':{label:'Intervención SOE', emoji:'🧭'},
+  'observacion_aula':{label:'Observación de aula', emoji:'👁️'},
+  'reunion_familia':{label:'Reunión con familia', emoji:'👨‍👩‍👧'},
+  'reunion_docentes':{label:'Reunión con docentes', emoji:'👩‍🏫'},
+  'derivacion_externa':{label:'Derivación externa', emoji:'🏥'},
+  'informe_externo':{label:'Informe externo recibido', emoji:'📄'},
+  'otro':{label:'Otro', emoji:'📝'}
+};
+
+function escH(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);}
+function gradoAUI(g){ return (g||'').replace(' grado','').replace('º','°'); }
+function esAdminDirCoord(){ return usuarioActual && ['admin','direccion','coordinador','desarrollador'].includes(usuarioActual.rol); }
+function soyPsicopedagoga(){ return misAsignaciones.some(a => a.tipo_asignacion === 'psicopedagoga'); }
+function soyEquipoSOE(){ return esAdminDirCoord() || soyPsicopedagoga(); }
+function soyTitularDe(grado){ return misAsignaciones.some(a => a.tipo_asignacion === 'titular' && gradoAUI(a.grado) === gradoAUI(grado)); }
+
+// === LOGIN ===
+window.addEventListener('DOMContentLoaded', async () => {
+  if(!sb){ mostrarError('Error cargando Supabase'); return; }
+  try {
+    const { data: { session } } = await sb.auth.getSession();
+    if(session && session.user) await cargarUsuario(session.user);
+  } catch(e){ console.warn('Sin sesión'); }
+  document.getElementById('loginPass').addEventListener('keydown', e => { if(e.key==='Enter') hacerLogin(); });
+});
+
+async function hacerLogin(){
+  const email = document.getElementById('loginEmail').value.trim();
+  const pass = document.getElementById('loginPass').value;
+  const btn = document.getElementById('btnLogin');
+  if(!email || !pass){ mostrarError('Completá email y contraseña'); return; }
+  btn.disabled = true; btn.textContent = 'Verificando...';
+  try {
+    const { data, error } = await sb.auth.signInWithPassword({ email, password: pass });
+    if(error){ mostrarError('Credenciales incorrectas'); btn.disabled=false; btn.textContent='Ingresar'; return; }
+    await cargarUsuario(data.user);
+  } catch(e){ mostrarError(e.message); btn.disabled=false; btn.textContent='Ingresar'; }
+}
+
+async function cargarUsuario(authUser){
+  try {
+    const { data } = await sb.from('usuarios').select('id, email, nombre, rol').eq('id', authUser.id).single();
+    usuarioActual = data || { id: authUser.id, email: authUser.email, nombre: authUser.email, rol: 'sin_rol' };
+    await cargarDatos();
+    mostrarApp();
+  } catch(e){ mostrarError('Error cargando perfil: ' + e.message); }
+}
+
+async function cargarDatos(){
+  const { data: asigs } = await sb.from('docente_asignaciones').select('id, email, nombre_completo, rol, tipo_asignacion, grado, materia');
+  todasAsignaciones = asigs || [];
+  misAsignaciones = todasAsignaciones.filter(a => a.email === usuarioActual.email);
+  const { data: als } = await sb.from('alumnos').select('id, nombre, grado, activo').eq('activo', true).order('nombre');
+  alumnos = (als||[]).map(a => ({...a, grado: gradoAUI(a.grado)}));
+  aMap = {};
+  alumnos.forEach(a => aMap[a.id] = a);
+  await cargarCasos();
+}
+
+async function cargarCasos(){
+  const { data, error } = await sb.from('casos_soe').select('*').order('fecha_apertura', { ascending: false });
+  if(error){ console.warn('Error cargando casos:', error.message); casos = []; return; }
+  casos = data || [];
+}
+
+function mostrarApp(){
+  document.getElementById('loginOverlay').style.display = 'none';
+  document.getElementById('topNav').style.display = 'flex';
+  document.getElementById('main').style.display = 'block';
+  const rolTxt = soyEquipoSOE() ? 'EQUIPO SOE' : soyTitularDe('cualquier') || misAsignaciones.some(a=>a.tipo_asignacion==='titular') ? 'TITULAR' : (usuarioActual.rol||'').toUpperCase();
+  document.getElementById('userLabel').textContent = `${usuarioActual.nombre || usuarioActual.email} · ${rolTxt}`;
+  // Botón nuevo caso solo para equipo SOE y titulares
+  const puedeCrear = soyEquipoSOE() || misAsignaciones.some(a => a.tipo_asignacion === 'titular');
+  document.getElementById('btnNuevoCaso').style.display = puedeCrear ? '' : 'none';
+  renderCasos();
+}
+
+function mostrarError(msg){
+  const el = document.getElementById('loginError');
+  el.textContent = msg; el.style.display = 'block';
+}
+
+async function cerrarSesion(){
+  if(!confirm('¿Cerrar sesión?')) return;
+  await sb.auth.signOut();
+  location.reload();
+}
+
+// === RENDER LISTA DE CASOS ===
+function renderCasos(){
+  const estado = document.getElementById('filtroEstado').value;
+  const area = document.getElementById('filtroArea').value;
+  const prio = document.getElementById('filtroPrio').value;
+  const busq = (document.getElementById('filtroBusqueda').value || '').toLowerCase().trim();
+
+  let lista = casos.slice();
+  if(estado === 'activos') lista = lista.filter(c => c.estado !== 'cerrado');
+  else if(estado !== 'todos') lista = lista.filter(c => c.estado === estado);
+  if(area) lista = lista.filter(c => c.area === area);
+  if(prio) lista = lista.filter(c => c.prioridad === prio);
+  if(busq){
+    lista = lista.filter(c => {
+      const al = aMap[c.alumno_id];
+      const nomAl = al ? al.nombre.toLowerCase() : '';
+      return c.titulo.toLowerCase().includes(busq)
+          || c.motivo_apertura.toLowerCase().includes(busq)
+          || nomAl.includes(busq);
+    });
+  }
+
+  // Ordenar: urgentes primero, después por fecha de apertura descendente
+  const prioOrden = {urgente:0, alta:1, media:2, baja:3};
+  lista.sort((a,b) => {
+    const pa = prioOrden[a.prioridad] ?? 9, pb = prioOrden[b.prioridad] ?? 9;
+    if(pa !== pb) return pa - pb;
+    return (b.fecha_apertura || '').localeCompare(a.fecha_apertura || '');
+  });
+
+  const cont = document.getElementById('contenidoCasos');
+  if(!lista.length){
+    cont.innerHTML = `<div class="empty"><div class="emoji">📋</div><p>No hay casos que coincidan con los filtros.</p></div>`;
+    return;
+  }
+  let html = `<div style="margin-bottom:10px;font-size:12px;color:var(--text3)">Mostrando ${lista.length} caso${lista.length!==1?'s':''}</div><div class="casos-grid">`;
+  lista.forEach(c => {
+    const al = aMap[c.alumno_id];
+    const nomAl = al ? `${escH(al.nombre)} · ${escH(al.grado)}` : '(alumno no visible)';
+    const areaInfo = AREAS[c.area] || {label:c.area, cls:'', emoji:''};
+    const prioInfo = PRIORIDADES[c.prioridad] || {label:c.prioridad, cls:''};
+    const estInfo = ESTADOS[c.estado] || {label:c.estado, cls:''};
+    html += `<div class="caso-card prio-${c.prioridad}" onclick="abrirCaso('${c.id}')">
+      <div class="titulo">${escH(c.titulo)}</div>
+      <div class="alumno">👤 ${nomAl}</div>
+      <div class="meta">
+        <span class="chip ${areaInfo.cls}">${areaInfo.emoji} ${escH(areaInfo.label)}</span>
+        <span class="chip ${prioInfo.cls}">${escH(prioInfo.label)}</span>
+        <span class="chip ${estInfo.cls}">${escH(estInfo.label)}</span>
+      </div>
+      <div class="fecha">Abierto: ${c.fecha_apertura || '—'}${c.fecha_cierre ? ` · Cerrado: ${c.fecha_cierre}` : ''}</div>
+    </div>`;
+  });
+  html += `</div>`;
+  cont.innerHTML = html;
+}
+
+// === MODAL: NUEVO CASO ===
+function abrirModalNuevoCaso(){
+  // Alumnos visibles según rol
+  const alsVis = alumnos.filter(a => {
+    if(soyEquipoSOE()) return true;
+    if(soyTitularDe(a.grado)) return true;
+    return false;
+  }).sort((a,b)=>a.nombre.localeCompare(b.nombre));
+
+  const html = `<div class="modal-overlay" onclick="if(event.target===this)this.remove()">
+    <div class="modal"><div class="modal-head"><h3>+ Nuevo caso SOE</h3><button class="modal-close" onclick="this.closest('.modal-overlay').remove()">✕</button></div>
+    <div class="modal-body">
+      <div class="form-row">
+        <label>Alumno *</label>
+        <select id="ncAlumno">
+          <option value="">— Elegir alumno —</option>
+          ${alsVis.map(a => `<option value="${a.id}">${escH(a.nombre)} · ${escH(a.grado)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-grid">
+        <div class="form-row">
+          <label>Área *</label>
+          <select id="ncArea">
+            ${Object.entries(AREAS).map(([k,v]) => `<option value="${k}">${v.emoji} ${v.label}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-row">
+          <label>Prioridad *</label>
+          <select id="ncPrio">
+            <option value="baja">🔵 Baja</option>
+            <option value="media" selected>🟡 Media</option>
+            <option value="alta">🟠 Alta</option>
+            <option value="urgente">🔴 Urgente</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-row">
+        <label>Título corto *</label>
+        <input type="text" id="ncTitulo" placeholder="Ej: Dificultades de atención en clase" maxlength="100">
+      </div>
+      <div class="form-row">
+        <label>Motivo de apertura *</label>
+        <textarea id="ncMotivo" placeholder="Describí la situación que motiva la apertura del caso..."></textarea>
+      </div>
+      <p style="font-size:11px;color:var(--text3);background:#fff3cd;padding:7px 10px;border-radius:5px">💡 Al crear el caso podés agregar entradas con intervenciones, adjuntar documentos y hacer el seguimiento.</p>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="this.closest('.modal-overlay').remove()">Cancelar</button>
+      <button class="btn btn-green" onclick="crearCaso()">💾 Crear caso</button>
+    </div></div></div>`;
+  document.body.insertAdjacentHTML('beforeend', html);
+}
+
+async function crearCaso(){
+  const alumno_id = document.getElementById('ncAlumno').value;
+  const area = document.getElementById('ncArea').value;
+  const prioridad = document.getElementById('ncPrio').value;
+  const titulo = document.getElementById('ncTitulo').value.trim();
+  const motivo_apertura = document.getElementById('ncMotivo').value.trim();
+  if(!alumno_id || !titulo || !motivo_apertura){ alert('Completá alumno, título y motivo.'); return; }
+  try {
+    const { data, error } = await sb.from('casos_soe').insert({
+      alumno_id, area, prioridad, titulo, motivo_apertura,
+      estado: 'abierto', confidencial: true,
+      abierto_por: usuarioActual.id
+    }).select().single();
+    if(error){ alert('❌ ' + error.message); return; }
+    casos.unshift(data);
+    document.querySelector('.modal-overlay').remove();
+    renderCasos();
+    abrirCaso(data.id);
+  } catch(e){ alert('❌ ' + e.message); }
+}
+
+// === DETALLE DEL CASO ===
+async function abrirCaso(casoId){
+  const caso = casos.find(c => c.id === casoId);
+  if(!caso){ alert('Caso no encontrado'); return; }
+  const al = aMap[caso.alumno_id];
+  const areaInfo = AREAS[caso.area] || {label:caso.area, cls:'', emoji:''};
+  const prioInfo = PRIORIDADES[caso.prioridad] || {label:caso.prioridad, cls:''};
+  const estInfo = ESTADOS[caso.estado] || {label:caso.estado, cls:''};
+
+  // Cargar entradas y adjuntos en paralelo
+  const [entrRes, adjRes] = await Promise.all([
+    sb.from('casos_soe_entradas').select('*').eq('caso_id', casoId).order('fecha', {ascending:false}),
+    sb.from('casos_soe_adjuntos').select('*').eq('caso_id', casoId).order('subido_en', {ascending:false})
+  ]);
+  const entradas = entrRes.data || [];
+  const adjuntos = adjRes.data || [];
+
+  const puedeAgregar = soyEquipoSOE() || (al && soyTitularDe(al.grado));
+  const puedeCerrar = soyEquipoSOE() && caso.estado !== 'cerrado';
+  const puedeReabrir = soyEquipoSOE() && caso.estado === 'cerrado';
+  const puedeCambiarPrio = soyEquipoSOE();
+
+  let html = `<div class="modal-overlay" onclick="if(event.target===this)this.remove()">
+    <div class="modal big">
+      <div class="modal-head">
+        <h3>📋 Caso SOE</h3>
+        <button class="modal-close" onclick="this.closest('.modal-overlay').remove()">✕</button>
+      </div>
+      <div class="caso-detalle-head">
+        <div class="titulo">${escH(caso.titulo)}</div>
+        <div class="alumno">👤 ${al ? escH(al.nombre) + ' · ' + escH(al.grado) : '(alumno no visible)'}</div>
+        <div class="meta">
+          <span class="chip ${areaInfo.cls}">${areaInfo.emoji} ${escH(areaInfo.label)}</span>
+          <span class="chip ${prioInfo.cls}">${escH(prioInfo.label)}</span>
+          <span class="chip ${estInfo.cls}">${escH(estInfo.label)}</span>
+        </div>
+        <div style="font-size:11px;color:var(--text3)">Abierto: ${caso.fecha_apertura}${caso.fecha_cierre ? ' · Cerrado: ' + caso.fecha_cierre : ''}${caso.derivado_a ? ' · Derivado a: ' + escH(caso.derivado_a) : ''}</div>
+      </div>
+      <div class="modal-body">
+        <div class="caso-detalle-section" style="border-bottom:none;padding-top:4px;padding-left:0;padding-right:0">
+          <h4>📝 Motivo de apertura</h4>
+          <div class="motivo-box">${escH(caso.motivo_apertura)}</div>
+          ${caso.motivo_cierre ? `<h4 style="margin-top:12px">🔒 Motivo de cierre</h4><div class="motivo-box">${escH(caso.motivo_cierre)}</div>` : ''}
+        </div>
+
+        <div class="caso-detalle-section" style="padding-left:0;padding-right:0">
+          <h4>🧵 Historial de intervenciones (${entradas.length})</h4>
+          ${entradas.length ? entradas.map(e => renderEntrada(e)).join('') : '<p style="color:var(--text3);font-style:italic;font-size:12px">Sin intervenciones registradas aún.</p>'}
+          ${puedeAgregar ? `<button class="btn btn-pri btn-sm" onclick="abrirModalEntrada('${caso.id}')">+ Agregar intervención</button>` : ''}
+        </div>
+
+        <div class="caso-detalle-section" style="padding-left:0;padding-right:0;border-bottom:none">
+          <h4>📎 Adjuntos (${adjuntos.length})</h4>
+          <div class="adjuntos-list">
+            ${adjuntos.map(a => `<span class="adjunto-chip" onclick="descargarAdjunto('${a.storage_path}','${escH(a.nombre_archivo)}')">📄 ${escH(a.nombre_archivo)}</span>`).join('')}
+            ${!adjuntos.length ? '<span style="color:var(--text3);font-style:italic;font-size:12px">Sin adjuntos.</span>' : ''}
+          </div>
+          ${puedeAgregar ? `<div style="margin-top:10px"><input type="file" id="fileAdj_${caso.id}" style="font-size:11px"> <button class="btn btn-sm" onclick="subirAdjunto('${caso.id}')">⬆ Subir adjunto</button></div>` : ''}
+        </div>
+      </div>
+      <div class="modal-foot">
+        ${puedeCambiarPrio ? `<button class="btn btn-sm" onclick="cambiarEstado('${caso.id}')">🔄 Cambiar estado/prioridad</button>` : ''}
+        ${puedeCerrar ? `<button class="btn btn-red btn-sm" onclick="cerrarCaso('${caso.id}')">🔒 Cerrar caso</button>` : ''}
+        ${puedeReabrir ? `<button class="btn btn-green btn-sm" onclick="reabrirCaso('${caso.id}')">🔓 Reabrir</button>` : ''}
+        <button class="btn btn-sm" onclick="this.closest('.modal-overlay').remove()">Cerrar</button>
+      </div>
+    </div></div>`;
+  document.body.insertAdjacentHTML('beforeend', html);
+}
+
+function renderEntrada(e){
+  const tipoInfo = TIPOS_ENTRADA[e.tipo] || {label:e.tipo, emoji:'📝'};
+  return `<div class="entrada">
+    <div class="entrada-head">
+      <span class="tipo">${tipoInfo.emoji} ${escH(tipoInfo.label)}</span>
+      <span class="fecha">${e.fecha || '—'}</span>
+    </div>
+    ${e.participantes ? `<div class="partic">👥 ${escH(e.participantes)}</div>` : ''}
+    <div class="desc">${escH(e.descripcion)}</div>
+    ${e.acuerdos ? `<div class="acuerdos"><strong>📝 Acuerdos:</strong> ${escH(e.acuerdos)}</div>` : ''}
+    ${e.proxima_accion ? `<div class="proxima"><strong>📅 Próxima acción:</strong> ${escH(e.proxima_accion)}${e.proxima_fecha ? ' · ' + e.proxima_fecha : ''}</div>` : ''}
+  </div>`;
+}
+
+// === MODAL: AGREGAR ENTRADA ===
+function abrirModalEntrada(casoId){
+  const html = `<div class="modal-overlay" onclick="if(event.target===this)this.remove()">
+    <div class="modal"><div class="modal-head"><h3>+ Nueva intervención</h3><button class="modal-close" onclick="this.closest('.modal-overlay').remove()">✕</button></div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-row">
+          <label>Tipo *</label>
+          <select id="neTipo">
+            ${Object.entries(TIPOS_ENTRADA).map(([k,v])=>`<option value="${k}">${v.emoji} ${v.label}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-row">
+          <label>Fecha *</label>
+          <input type="date" id="neFecha" value="${new Date().toISOString().split('T')[0]}">
+        </div>
+      </div>
+      <div class="form-row">
+        <label>Participantes</label>
+        <input type="text" id="neParticipantes" placeholder="Ej: Montse, Andrea, mamá del alumno">
+      </div>
+      <div class="form-row">
+        <label>Descripción *</label>
+        <textarea id="neDesc" placeholder="¿Qué pasó? ¿Qué se trabajó?"></textarea>
+      </div>
+      <div class="form-row">
+        <label>Acuerdos (opcional)</label>
+        <textarea id="neAcuerdos" placeholder="Compromisos asumidos, próximos pasos acordados..."></textarea>
+      </div>
+      <div class="form-grid">
+        <div class="form-row">
+          <label>Próxima acción (opcional)</label>
+          <input type="text" id="neProxAccion" placeholder="Ej: Reunión de seguimiento">
+        </div>
+        <div class="form-row">
+          <label>Próxima fecha (opcional)</label>
+          <input type="date" id="neProxFecha">
+        </div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="this.closest('.modal-overlay').remove()">Cancelar</button>
+      <button class="btn btn-green" onclick="guardarEntrada('${casoId}')">💾 Guardar</button>
+    </div></div></div>`;
+  document.body.insertAdjacentHTML('beforeend', html);
+}
+
+async function guardarEntrada(casoId){
+  const tipo = document.getElementById('neTipo').value;
+  const fecha = document.getElementById('neFecha').value;
+  const participantes = document.getElementById('neParticipantes').value.trim();
+  const descripcion = document.getElementById('neDesc').value.trim();
+  const acuerdos = document.getElementById('neAcuerdos').value.trim();
+  const proxima_accion = document.getElementById('neProxAccion').value.trim();
+  const proxima_fecha = document.getElementById('neProxFecha').value;
+  if(!tipo || !fecha || !descripcion){ alert('Completá tipo, fecha y descripción.'); return; }
+  try {
+    const { error } = await sb.from('casos_soe_entradas').insert({
+      caso_id: casoId, tipo, fecha, participantes: participantes||null,
+      descripcion, acuerdos: acuerdos||null,
+      proxima_accion: proxima_accion||null, proxima_fecha: proxima_fecha||null,
+      registrado_por: usuarioActual.id
+    });
+    if(error){ alert('❌ ' + error.message); return; }
+    // Si el caso estaba 'abierto', pasar a 'en_seguimiento'
+    const caso = casos.find(c => c.id === casoId);
+    if(caso && caso.estado === 'abierto'){
+      await sb.from('casos_soe').update({ estado: 'en_seguimiento', updated_at: new Date().toISOString() }).eq('id', casoId);
+      caso.estado = 'en_seguimiento';
+    }
+    document.querySelector('.modal-overlay').remove();
+    // Cerrar modal de caso y reabrir para refrescar
+    const modales = document.querySelectorAll('.modal-overlay');
+    modales.forEach(m => m.remove());
+    renderCasos();
+    abrirCaso(casoId);
+  } catch(e){ alert('❌ ' + e.message); }
+}
+
+// === ADJUNTOS ===
+async function subirAdjunto(casoId){
+  const input = document.getElementById('fileAdj_' + casoId);
+  const file = input.files[0];
+  if(!file){ alert('Elegí un archivo primero.'); return; }
+  if(file.size > 50*1024*1024){ alert('Archivo muy grande (máx 50 MB).'); return; }
+  const path = `${casoId}/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g,'_')}`;
+  try {
+    const { error: upErr } = await sb.storage.from('soe-adjuntos').upload(path, file);
+    if(upErr){ alert('❌ Error subiendo: ' + upErr.message); return; }
+    const { error: insErr } = await sb.from('casos_soe_adjuntos').insert({
+      caso_id: casoId,
+      nombre_archivo: file.name,
+      storage_path: path,
+      tipo_mime: file.type,
+      tamano_bytes: file.size,
+      subido_por: usuarioActual.id
+    });
+    if(insErr){ alert('❌ Error registrando adjunto: ' + insErr.message); return; }
+    const modales = document.querySelectorAll('.modal-overlay');
+    modales.forEach(m => m.remove());
+    abrirCaso(casoId);
+  } catch(e){ alert('❌ ' + e.message); }
+}
+
+async function descargarAdjunto(storagePath, nombreArchivo){
+  try {
+    const { data, error } = await sb.storage.from('soe-adjuntos').createSignedUrl(storagePath, 60);
+    if(error){ alert('❌ ' + error.message); return; }
+    const a = document.createElement('a');
+    a.href = data.signedUrl; a.download = nombreArchivo; a.target = '_blank';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  } catch(e){ alert('❌ ' + e.message); }
+}
+
+// === CAMBIAR ESTADO/CERRAR/REABRIR ===
+function cambiarEstado(casoId){
+  const caso = casos.find(c => c.id === casoId);
+  if(!caso) return;
+  const html = `<div class="modal-overlay" onclick="if(event.target===this)this.remove()">
+    <div class="modal"><div class="modal-head"><h3>🔄 Cambiar estado/prioridad</h3><button class="modal-close" onclick="this.closest('.modal-overlay').remove()">✕</button></div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-row">
+          <label>Estado</label>
+          <select id="cePrio">
+            ${Object.entries(ESTADOS).map(([k,v])=>`<option value="${k}"${caso.estado===k?' selected':''}>${v.label}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-row">
+          <label>Prioridad</label>
+          <select id="cePrioRidad">
+            ${Object.entries(PRIORIDADES).map(([k,v])=>`<option value="${k}"${caso.prioridad===k?' selected':''}>${v.emoji} ${v.label}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+      <div class="form-row">
+        <label>Derivado a (opcional)</label>
+        <input type="text" id="ceDerivado" value="${escH(caso.derivado_a||'')}" placeholder="Ej: Psiquiatra, pediatra...">
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="this.closest('.modal-overlay').remove()">Cancelar</button>
+      <button class="btn btn-green" onclick="guardarCambioEstado('${casoId}')">💾 Guardar</button>
+    </div></div></div>`;
+  document.body.insertAdjacentHTML('beforeend', html);
+}
+
+async function guardarCambioEstado(casoId){
+  const estado = document.getElementById('cePrio').value;
+  const prioridad = document.getElementById('cePrioRidad').value;
+  const derivado_a = document.getElementById('ceDerivado').value.trim();
+  try {
+    const { error } = await sb.from('casos_soe').update({
+      estado, prioridad, derivado_a: derivado_a||null, updated_at: new Date().toISOString()
+    }).eq('id', casoId);
+    if(error){ alert('❌ ' + error.message); return; }
+    const caso = casos.find(c => c.id === casoId);
+    if(caso){ caso.estado=estado; caso.prioridad=prioridad; caso.derivado_a=derivado_a||null; }
+    const modales = document.querySelectorAll('.modal-overlay');
+    modales.forEach(m => m.remove());
+    renderCasos();
+    abrirCaso(casoId);
+  } catch(e){ alert('❌ ' + e.message); }
+}
+
+async function cerrarCaso(casoId){
+  const motivo = prompt('Motivo de cierre del caso (obligatorio):');
+  if(!motivo || !motivo.trim()){ alert('Motivo obligatorio.'); return; }
+  try {
+    const { error } = await sb.from('casos_soe').update({
+      estado: 'cerrado', fecha_cierre: new Date().toISOString().split('T')[0],
+      motivo_cierre: motivo.trim(), cerrado_por: usuarioActual.id, updated_at: new Date().toISOString()
+    }).eq('id', casoId);
+    if(error){ alert('❌ ' + error.message); return; }
+    const caso = casos.find(c => c.id === casoId);
+    if(caso){ caso.estado='cerrado'; caso.motivo_cierre=motivo.trim(); caso.fecha_cierre=new Date().toISOString().split('T')[0]; }
+    const modales = document.querySelectorAll('.modal-overlay');
+    modales.forEach(m => m.remove());
+    renderCasos();
+  } catch(e){ alert('❌ ' + e.message); }
+}
+
+async function reabrirCaso(casoId){
+  if(!confirm('¿Reabrir este caso cerrado?')) return;
+  try {
+    const { error } = await sb.from('casos_soe').update({
+      estado: 'en_seguimiento', fecha_cierre: null, motivo_cierre: null,
+      cerrado_por: null, updated_at: new Date().toISOString()
+    }).eq('id', casoId);
+    if(error){ alert('❌ ' + error.message); return; }
+    const caso = casos.find(c => c.id === casoId);
+    if(caso){ caso.estado='en_seguimiento'; caso.fecha_cierre=null; caso.motivo_cierre=null; }
+    const modales = document.querySelectorAll('.modal-overlay');
+    modales.forEach(m => m.remove());
+    renderCasos();
+    abrirCaso(casoId);
+  } catch(e){ alert('❌ ' + e.message); }
+}
+</script>
+</body>
+</html>
