@@ -158,6 +158,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
 <nav class="top-nav" id="topNav" style="display:none">
   <h1>🧭 SOE — Servicio de Orientación Escolar</h1>
   <div class="user">
+    <button id="btnBandejaSolic" onclick="irABandejaSolicitudes()" title="Ver solicitudes pendientes de docentes" style="display:none;background:#d97706;border-color:#92400e;font-weight:700">📥 Solicitudes <span id="badgeSolic" style="background:#fff;color:#92400e;border-radius:10px;padding:1px 6px;margin-left:4px;font-size:10px">0</span></button>
     <span id="userLabel">—</span>
     <button onclick="volverPlataforma()" title="Volver al launcher" style="background:rgba(255,255,255,0.25)">🏠 Plataforma</button>
     <button onclick="cerrarSesion()">Salir</button>
@@ -174,9 +175,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
   <div class="toolbar">
     <label>Estado:</label>
     <select id="filtroEstado" onchange="renderCasos()">
-      <option value="activos">Activos (abiertos + seguimiento)</option>
+      <option value="solicitado">📥 Solicitudes pendientes <span id="badgeFiltroSolic"></span></option>
+      <option value="activos" selected>Activos (abiertos + seguimiento)</option>
       <option value="todos">Todos</option>
       <option value="abierto">Abiertos</option>
+      <option value="en_proceso">En proceso</option>
       <option value="en_seguimiento">En seguimiento</option>
       <option value="derivado">Derivados</option>
       <option value="cerrado">Cerrados</option>
@@ -236,7 +239,9 @@ const PRIORIDADES = {
   'baja':{label:'Baja', cls:'chip-prio-b', emoji:'🔵'}
 };
 const ESTADOS = {
+  'solicitado':{label:'Solicitado por docente', cls:'chip-prio-a'},
   'abierto':{label:'Abierto', cls:'chip-est-ab'},
+  'en_proceso':{label:'En proceso', cls:'chip-est-se'},
   'en_seguimiento':{label:'En seguimiento', cls:'chip-est-se'},
   'derivado':{label:'Derivado', cls:'chip-est-de'},
   'cerrado':{label:'Cerrado', cls:'chip-est-ce'}
@@ -316,7 +321,28 @@ function mostrarApp(){
   // Botón nuevo caso solo para equipo SOE y titulares
   const puedeCrear = soyEquipoSOE() || misAsignaciones.some(a => a.tipo_asignacion === 'titular');
   document.getElementById('btnNuevoCaso').style.display = puedeCrear ? '' : 'none';
+  // Botón bandeja solicitudes solo para equipo SOE
+  const btnBandeja = document.getElementById('btnBandejaSolic');
+  if(btnBandeja) btnBandeja.style.display = soyEquipoSOE() ? '' : 'none';
+  actualizarBadgeSolicitudes();
   renderCasos();
+}
+
+function actualizarBadgeSolicitudes(){
+  const pendientes = casos.filter(c => c.estado === 'solicitado').length;
+  const badge = document.getElementById('badgeSolic');
+  if(badge){ badge.textContent = pendientes; }
+  const btn = document.getElementById('btnBandejaSolic');
+  if(btn && soyEquipoSOE()){
+    btn.style.background = pendientes > 0 ? '#d97706' : 'rgba(255,255,255,0.15)';
+    btn.style.borderColor = pendientes > 0 ? '#92400e' : 'rgba(255,255,255,0.3)';
+  }
+}
+
+function irABandejaSolicitudes(){
+  document.getElementById('filtroEstado').value = 'solicitado';
+  renderCasos();
+  window.scrollTo({top: 0, behavior: 'smooth'});
 }
 
 function mostrarError(msg){
@@ -341,8 +367,11 @@ function renderCasos(){
   const prio = document.getElementById('filtroPrio').value;
   const busq = (document.getElementById('filtroBusqueda').value || '').toLowerCase().trim();
 
+  // Actualizar badge solicitudes
+  actualizarBadgeSolicitudes();
+
   let lista = casos.slice();
-  if(estado === 'activos') lista = lista.filter(c => c.estado !== 'cerrado');
+  if(estado === 'activos') lista = lista.filter(c => c.estado !== 'cerrado' && c.estado !== 'solicitado');
   else if(estado !== 'todos') lista = lista.filter(c => c.estado === estado);
   if(area) lista = lista.filter(c => c.area === area);
   if(prio) lista = lista.filter(c => c.prioridad === prio);
@@ -483,9 +512,13 @@ async function abrirCaso(casoId){
   const adjuntos = adjRes.data || [];
 
   const puedeAgregar = soyEquipoSOE() || (al && soyTitularDe(al.grado));
-  const puedeCerrar = soyEquipoSOE() && caso.estado !== 'cerrado';
+  const puedeCerrar = soyEquipoSOE() && caso.estado !== 'cerrado' && caso.estado !== 'solicitado';
   const puedeReabrir = soyEquipoSOE() && caso.estado === 'cerrado';
   const puedeCambiarPrio = soyEquipoSOE();
+  const esSolicitud = caso.estado === 'solicitado';
+  const puedeAceptarDescartar = soyEquipoSOE() && esSolicitud;
+  const puedeGestionarDocentes = soyEquipoSOE() && !esSolicitud;
+  const docentesInv = Array.isArray(caso.docentes_involucrados) ? caso.docentes_involucrados : [];
 
   let html = `<div class="modal-overlay" onclick="if(event.target===this)this.remove()">
     <div class="modal big">
@@ -505,9 +538,26 @@ async function abrirCaso(casoId){
       </div>
       <div class="modal-body">
         <div class="caso-detalle-section" style="border-bottom:none;padding-top:4px;padding-left:0;padding-right:0">
-          <h4>📝 Motivo de apertura</h4>
+          ${esSolicitud ? `<div style="background:#fff3e6;border-left:4px solid #d97706;padding:10px 14px;border-radius:4px;margin-bottom:12px;font-size:12px;color:#92400e;line-height:1.5">
+            <strong>📥 Solicitud pendiente de revisión</strong><br>
+            Un docente derivó este alumno al SOE. Decidí si abrir el caso formalmente o descartar la solicitud.
+          </div>` : ''}
+          <h4>📝 Motivo de apertura${esSolicitud ? ' (descrito por el docente)' : ''}</h4>
           <div class="motivo-box">${escH(caso.motivo_apertura)}</div>
           ${caso.motivo_cierre ? `<h4 style="margin-top:12px">🔒 Motivo de cierre</h4><div class="motivo-box">${escH(caso.motivo_cierre)}</div>` : ''}
+        </div>
+
+        <div class="caso-detalle-section" style="padding-left:0;padding-right:0">
+          <h4>👥 Docentes involucrados (${docentesInv.length})</h4>
+          <div style="font-size:11px;color:var(--text3);margin-bottom:6px">Los docentes de esta lista pueden ver las entradas marcadas como "visibles para docente" y aportar observaciones al caso.</div>
+          <div id="listaDocentesInv" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px">
+            ${docentesInv.length ? docentesInv.map(em => {
+              const docAsig = todasAsignaciones.find(a => a.email === em);
+              const nombre = docAsig ? docAsig.nombre_completo : em;
+              return `<span class="chip chip-area-fd" style="padding:4px 10px;font-size:11px">👤 ${escH(nombre)}${puedeGestionarDocentes ? ` <span style="cursor:pointer;color:#a34434;margin-left:4px" onclick="quitarDocenteInvolucrado('${caso.id}','${em}')" title="Quitar">✕</span>` : ''}</span>`;
+            }).join('') : '<span style="color:var(--text3);font-style:italic;font-size:12px">Ningún docente involucrado todavía.</span>'}
+          </div>
+          ${puedeGestionarDocentes ? `<button class="btn btn-sm" onclick="abrirModalAgregarDocente('${caso.id}')">+ Agregar docente</button>` : ''}
         </div>
 
         <div class="caso-detalle-section" style="padding-left:0;padding-right:0">
@@ -526,7 +576,9 @@ async function abrirCaso(casoId){
         </div>
       </div>
       <div class="modal-foot">
-        ${puedeCambiarPrio ? `<button class="btn btn-sm" onclick="cambiarEstado('${caso.id}')">🔄 Cambiar estado/prioridad</button>` : ''}
+        ${puedeAceptarDescartar ? `<button class="btn btn-green btn-sm" onclick="aceptarSolicitud('${caso.id}')">✓ Aceptar (abrir caso)</button>` : ''}
+        ${puedeAceptarDescartar ? `<button class="btn btn-red btn-sm" onclick="descartarSolicitud('${caso.id}')">✗ Descartar solicitud</button>` : ''}
+        ${puedeCambiarPrio && !esSolicitud ? `<button class="btn btn-sm" onclick="cambiarEstado('${caso.id}')">🔄 Cambiar estado/prioridad</button>` : ''}
         ${puedeCerrar ? `<button class="btn btn-red btn-sm" onclick="cerrarCaso('${caso.id}')">🔒 Cerrar caso</button>` : ''}
         ${puedeReabrir ? `<button class="btn btn-green btn-sm" onclick="reabrirCaso('${caso.id}')">🔓 Reabrir</button>` : ''}
         <button class="btn btn-sm" onclick="this.closest('.modal-overlay').remove()">Cerrar</button>
@@ -537,9 +589,12 @@ async function abrirCaso(casoId){
 
 function renderEntrada(e){
   const tipoInfo = TIPOS_ENTRADA[e.tipo] || {label:e.tipo, emoji:'📝'};
-  return `<div class="entrada">
+  const badgeVisible = e.visible_para_docente
+    ? '<span style="background:#2e7d4a;color:#fff;font-size:10px;padding:2px 7px;border-radius:9px;font-weight:700;margin-left:6px">👁 visible al docente</span>'
+    : '<span style="background:#e9ecef;color:#495057;font-size:10px;padding:2px 7px;border-radius:9px;font-weight:700;margin-left:6px">🔒 privada SOE</span>';
+  return `<div class="entrada" style="border-left:3px solid ${e.visible_para_docente ? '#2e7d4a' : '#e9ecef'}">
     <div class="entrada-head">
-      <span class="tipo">${tipoInfo.emoji} ${escH(tipoInfo.label)}</span>
+      <span class="tipo">${tipoInfo.emoji} ${escH(tipoInfo.label)}${badgeVisible}</span>
       <span class="fecha">${e.fecha || '—'}</span>
     </div>
     ${e.participantes ? `<div class="partic">👥 ${escH(e.participantes)}</div>` : ''}
@@ -588,6 +643,13 @@ function abrirModalEntrada(casoId){
           <input type="date" id="neProxFecha">
         </div>
       </div>
+      <div class="form-row" style="background:#f0f9ff;padding:10px 14px;border-radius:6px;border-left:3px solid #1a6ba3">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:600;color:#1a6ba3">
+          <input type="checkbox" id="neVisibleDocente">
+          <span>👁 Compartir esta entrada con los docentes involucrados del caso</span>
+        </label>
+        <div style="font-size:11px;color:var(--text3);margin-top:4px;padding-left:24px">Si la marcás, los docentes involucrados verán esta entrada en su tab "📥 Mis casos SOE" de GEI. Dejala desmarcada si es información confidencial del equipo SOE.</div>
+      </div>
     </div>
     <div class="modal-foot">
       <button class="btn" onclick="this.closest('.modal-overlay').remove()">Cancelar</button>
@@ -604,13 +666,15 @@ async function guardarEntrada(casoId){
   const acuerdos = document.getElementById('neAcuerdos').value.trim();
   const proxima_accion = document.getElementById('neProxAccion').value.trim();
   const proxima_fecha = document.getElementById('neProxFecha').value;
+  const visible_para_docente = !!document.getElementById('neVisibleDocente')?.checked;
   if(!tipo || !fecha || !descripcion){ alert('Completá tipo, fecha y descripción.'); return; }
   try {
     const { error } = await sb.from('casos_soe_entradas').insert({
       caso_id: casoId, tipo, fecha, participantes: participantes||null,
       descripcion, acuerdos: acuerdos||null,
       proxima_accion: proxima_accion||null, proxima_fecha: proxima_fecha||null,
-      registrado_por: usuarioActual.id
+      registrado_por: usuarioActual.id,
+      visible_para_docente: visible_para_docente
     });
     if(error){ alert('❌ ' + error.message); return; }
     // Si el caso estaba 'abierto', pasar a 'en_seguimiento'
@@ -744,6 +808,124 @@ async function reabrirCaso(casoId){
     const modales = document.querySelectorAll('.modal-overlay');
     modales.forEach(m => m.remove());
     renderCasos();
+    abrirCaso(casoId);
+  } catch(e){ alert('❌ ' + e.message); }
+}
+
+// === SOLICITUDES DE DOCENTES ===
+async function aceptarSolicitud(casoId){
+  if(!soyEquipoSOE()){ alert('⛔ Solo equipo SOE.'); return; }
+  if(!confirm('¿Aceptar esta solicitud y abrir el caso formalmente?\n\nEl docente que la envió seguirá siendo parte de "docentes involucrados" y podrá ver las entradas que marques como visibles.')) return;
+  try {
+    const { error } = await sb.from('casos_soe').update({
+      estado: 'abierto',
+      fecha_apertura: new Date().toISOString().slice(0,10),
+      updated_at: new Date().toISOString()
+    }).eq('id', casoId);
+    if(error){ alert('❌ ' + error.message); return; }
+    const caso = casos.find(c => c.id === casoId);
+    if(caso) caso.estado = 'abierto';
+    document.querySelectorAll('.modal-overlay').forEach(m => m.remove());
+    renderCasos();
+    abrirCaso(casoId);
+  } catch(e){ alert('❌ ' + e.message); }
+}
+
+async function descartarSolicitud(casoId){
+  if(!soyEquipoSOE()){ alert('⛔ Solo equipo SOE.'); return; }
+  const motivo = prompt('¿Por qué descartás esta solicitud?\n\nEjemplos: "Alumno ya en seguimiento", "No corresponde al SOE", "Situación resuelta en el aula"\n\nEl motivo se guarda en el caso y el docente que derivó lo verá.');
+  if(!motivo || motivo.trim().length < 10){ alert('Necesitás un motivo de al menos 10 caracteres.'); return; }
+  try {
+    const { error } = await sb.from('casos_soe').update({
+      estado: 'cerrado',
+      motivo_cierre: 'DESCARTADA: ' + motivo.trim(),
+      fecha_cierre: new Date().toISOString().slice(0,10),
+      cerrado_por: usuarioActual.id,
+      updated_at: new Date().toISOString()
+    }).eq('id', casoId);
+    if(error){ alert('❌ ' + error.message); return; }
+    const caso = casos.find(c => c.id === casoId);
+    if(caso){ caso.estado='cerrado'; caso.motivo_cierre='DESCARTADA: ' + motivo.trim(); caso.fecha_cierre=new Date().toISOString().slice(0,10); }
+    document.querySelectorAll('.modal-overlay').forEach(m => m.remove());
+    renderCasos();
+  } catch(e){ alert('❌ ' + e.message); }
+}
+
+// === DOCENTES INVOLUCRADOS ===
+function abrirModalAgregarDocente(casoId){
+  if(!soyEquipoSOE()){ alert('⛔ Solo equipo SOE.'); return; }
+  const caso = casos.find(c => c.id === casoId);
+  if(!caso) return;
+  const al = aMap[caso.alumno_id];
+  const gradoAl = al ? al.grado : '';
+  // Docentes del grado del alumno (titulares + materia)
+  const docsDelGrado = todasAsignaciones.filter(a =>
+    ['titular','materia'].includes(a.tipo_asignacion) &&
+    gradoAUI(a.grado) === gradoAl
+  );
+  // Eliminar duplicados por email
+  const yaInvolucrados = caso.docentes_involucrados || [];
+  const docsUnicos = [];
+  const emailsVistos = new Set();
+  docsDelGrado.forEach(d => {
+    if(!emailsVistos.has(d.email) && !yaInvolucrados.includes(d.email)){
+      emailsVistos.add(d.email);
+      docsUnicos.push(d);
+    }
+  });
+
+  const html = `<div class="modal-overlay" onclick="if(event.target===this)this.remove()">
+    <div class="modal"><div class="modal-head"><h3>+ Agregar docente involucrado</h3><button class="modal-close" onclick="this.closest('.modal-overlay').remove()">✕</button></div>
+    <div class="modal-body">
+      <p style="font-size:12px;color:var(--text2);margin-bottom:10px">Docentes de ${escH(gradoAl)} (alumno: ${al ? escH(al.nombre) : '—'}). El docente seleccionado podrá ver las entradas marcadas como "visibles al docente" y aportar observaciones.</p>
+      ${docsUnicos.length === 0 ? '<p style="color:var(--text3);font-style:italic">No hay más docentes del grado para agregar (o ya están todos involucrados).</p>' : `
+        <div class="form-row">
+          <label>Docente *</label>
+          <select id="agDocente">
+            <option value="">— Elegir —</option>
+            ${docsUnicos.map(d => `<option value="${escH(d.email)}">${escH(d.nombre_completo)} · ${escH(d.tipo_asignacion)}${d.materia ? ' ('+escH(d.materia)+')' : ''}</option>`).join('')}
+          </select>
+        </div>
+      `}
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="this.closest('.modal-overlay').remove()">Cancelar</button>
+      ${docsUnicos.length > 0 ? `<button class="btn btn-green" onclick="agregarDocenteInvolucrado('${casoId}')">+ Agregar</button>` : ''}
+    </div></div></div>`;
+  document.body.insertAdjacentHTML('beforeend', html);
+}
+
+async function agregarDocenteInvolucrado(casoId){
+  const email = document.getElementById('agDocente').value;
+  if(!email){ alert('Elegí un docente.'); return; }
+  const caso = casos.find(c => c.id === casoId);
+  if(!caso) return;
+  const nuevoArr = Array.from(new Set([...(caso.docentes_involucrados || []), email]));
+  try {
+    const { error } = await sb.from('casos_soe').update({
+      docentes_involucrados: nuevoArr,
+      updated_at: new Date().toISOString()
+    }).eq('id', casoId);
+    if(error){ alert('❌ ' + error.message); return; }
+    caso.docentes_involucrados = nuevoArr;
+    document.querySelectorAll('.modal-overlay').forEach(m => m.remove());
+    abrirCaso(casoId);
+  } catch(e){ alert('❌ ' + e.message); }
+}
+
+async function quitarDocenteInvolucrado(casoId, email){
+  if(!confirm('¿Quitar este docente del caso?\n\nYa no verá las entradas ni podrá aportar al seguimiento.')) return;
+  const caso = casos.find(c => c.id === casoId);
+  if(!caso) return;
+  const nuevoArr = (caso.docentes_involucrados || []).filter(e => e !== email);
+  try {
+    const { error } = await sb.from('casos_soe').update({
+      docentes_involucrados: nuevoArr,
+      updated_at: new Date().toISOString()
+    }).eq('id', casoId);
+    if(error){ alert('❌ ' + error.message); return; }
+    caso.docentes_involucrados = nuevoArr;
+    document.querySelectorAll('.modal-overlay').forEach(m => m.remove());
     abrirCaso(casoId);
   } catch(e){ alert('❌ ' + e.message); }
 }
