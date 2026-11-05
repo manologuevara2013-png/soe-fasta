@@ -261,6 +261,49 @@ function gradoAUI(g){ return (g||'').replace(' grado','').replace('º','°'); }
 function esAdminDirCoord(){ return usuarioActual && ['admin','direccion','coordinador','desarrollador'].includes(usuarioActual.rol); }
 function soyPsicopedagoga(){ return misAsignaciones.some(a => a.tipo_asignacion === 'psicopedagoga'); }
 function soyEquipoSOE(){ return esAdminDirCoord() || soyPsicopedagoga(); }
+
+// Opción C — scope de edición en el equipo SOE.
+// Admin/Dir/Coord/Dev: editan cualquier caso.
+// Psicopedagoga: solo edita los casos que tiene asignados o donde fue involucrada.
+// Las demás psicopedagogas pueden LEER el caso, no editar (transparencia + scope).
+function puedoEditarCaso(caso){
+  if(!caso) return false;
+  if(esAdminDirCoord()) return true;
+  const mail = (usuarioActual && usuarioActual.email) || '';
+  if(soyPsicopedagoga() && caso.asignado_a && caso.asignado_a === mail) return true;
+  const inv = Array.isArray(caso.docentes_involucrados) ? caso.docentes_involucrados : [];
+  if(mail && inv.includes(mail)) return true;
+  return false;
+}
+
+// Verdadero cuando una psicopedagoga mira un caso que no es suyo ni fue invitada
+function esModoLecturaEnCaso(caso){
+  if(!caso) return false;
+  if(esAdminDirCoord()) return false;
+  if(!soyPsicopedagoga()) return false;
+  return !puedoEditarCaso(caso);
+}
+
+// Devuelve la lista única de psicopedagogas del plantel: [{email, nombre, grados: ['5°','6°','7°']}]
+function psicopedagogasDisponibles(){
+  const map = new Map();
+  (todasAsignaciones || []).forEach(a => {
+    if(a.tipo_asignacion !== 'psicopedagoga') return;
+    if(!map.has(a.email)){
+      map.set(a.email, { email: a.email, nombre: a.nombre_completo || a.email, grados: [] });
+    }
+    const entry = map.get(a.email);
+    const g = gradoAUI(a.grado);
+    if(!entry.grados.includes(g)) entry.grados.push(g);
+  });
+  return Array.from(map.values()).sort((a,b) => (a.nombre||'').localeCompare(b.nombre||''));
+}
+
+function nombrePsicopedagoga(email){
+  if(!email) return null;
+  const p = psicopedagogasDisponibles().find(x => x.email === email);
+  return p ? p.nombre : email;
+}
 function soyTitularDe(grado){ return misAsignaciones.some(a => a.tipo_asignacion === 'titular' && gradoAUI(a.grado) === gradoAUI(grado)); }
 
 // === LOGIN ===
@@ -511,14 +554,18 @@ async function abrirCaso(casoId){
   const entradas = entrRes.data || [];
   const adjuntos = adjRes.data || [];
 
-  const puedeAgregar = soyEquipoSOE() || (al && soyTitularDe(al.grado));
-  const puedeCerrar = soyEquipoSOE() && caso.estado !== 'cerrado' && caso.estado !== 'solicitado';
-  const puedeReabrir = soyEquipoSOE() && caso.estado === 'cerrado';
-  const puedeCambiarPrio = soyEquipoSOE();
+  const puedeEditarEste = puedoEditarCaso(caso);
+  const esLectura = esModoLecturaEnCaso(caso);
+  const puedeAgregar = puedeEditarEste || (al && soyTitularDe(al.grado));
+  const puedeCerrar = puedeEditarEste && caso.estado !== 'cerrado' && caso.estado !== 'solicitado';
+  const puedeReabrir = puedeEditarEste && caso.estado === 'cerrado';
+  const puedeCambiarPrio = puedeEditarEste;
   const esSolicitud = caso.estado === 'solicitado';
-  const puedeAceptarDescartar = soyEquipoSOE() && esSolicitud;
-  const puedeGestionarDocentes = soyEquipoSOE() && !esSolicitud;
+  const puedeAceptarDescartar = puedeEditarEste && esSolicitud;
+  const puedeGestionarDocentes = puedeEditarEste && !esSolicitud;
+  const puedeReasignar = esAdminDirCoord();
   const docentesInv = Array.isArray(caso.docentes_involucrados) ? caso.docentes_involucrados : [];
+  const psicoAsignada = caso.asignado_a ? nombrePsicopedagoga(caso.asignado_a) : null;
 
   let html = `<div class="modal-overlay" onclick="if(event.target===this)this.remove()">
     <div class="modal big">
@@ -538,6 +585,9 @@ async function abrirCaso(casoId){
       </div>
       <div class="modal-body">
         <div class="caso-detalle-section" style="border-bottom:none;padding-top:4px;padding-left:0;padding-right:0">
+          ${esLectura ? `<div style="background:#eef2f7;border-left:4px solid #5a6b74;padding:10px 14px;border-radius:4px;margin-bottom:12px;font-size:12px;color:#334155;line-height:1.5">
+            <strong>📖 Modo lectura</strong> — este caso está asignado a <strong>${escH(psicoAsignada || 'otra psicopedagoga')}</strong>. Podés leerlo como miembro del equipo, pero no editarlo. Si tenés que intervenir, hablalo con Dirección para que te sume como docente involucrada o reasigne el caso.
+          </div>` : ''}
           ${esSolicitud ? `<div style="background:#fff3e6;border-left:4px solid #d97706;padding:10px 14px;border-radius:4px;margin-bottom:12px;font-size:12px;color:#92400e;line-height:1.5">
             <strong>📥 Solicitud pendiente de revisión</strong><br>
             Un docente derivó este alumno al SOE. Decidí si abrir el caso formalmente o descartar la solicitud.
@@ -545,6 +595,18 @@ async function abrirCaso(casoId){
           <h4>📝 Motivo de apertura${esSolicitud ? ' (descrito por el docente)' : ''}</h4>
           <div class="motivo-box">${escH(caso.motivo_apertura)}</div>
           ${caso.motivo_cierre ? `<h4 style="margin-top:12px">🔒 Motivo de cierre</h4><div class="motivo-box">${escH(caso.motivo_cierre)}</div>` : ''}
+        </div>
+
+        <div class="caso-detalle-section" style="padding-left:0;padding-right:0">
+          <h4>👩‍🏫 Psicopedagoga asignada</h4>
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">
+            ${psicoAsignada
+              ? `<span class="chip" style="background:#f0e8f5;color:#6a3b8a;padding:5px 12px;font-size:12px;font-weight:600">👤 ${escH(psicoAsignada)}</span>`
+              : `<span style="color:#a34434;font-style:italic;font-size:12px">Sin asignar — Dirección debe elegir una psicopedagoga para este caso.</span>`
+            }
+            ${puedeReasignar ? `<button class="btn btn-sm" onclick="abrirModalReasignarPsico('${caso.id}')" style="background:#1d3a5f;color:#fff">🔄 ${psicoAsignada ? 'Reasignar' : 'Asignar'}</button>` : ''}
+          </div>
+          <div style="font-size:11px;color:var(--text3);margin-bottom:12px">La psicopedagoga asignada es la responsable principal del caso. Solo ella, Dirección y los docentes involucrados pueden editar entradas y tomar acciones.</div>
         </div>
 
         <div class="caso-detalle-section" style="padding-left:0;padding-right:0">
@@ -814,25 +876,80 @@ async function reabrirCaso(casoId){
 
 // === SOLICITUDES DE DOCENTES ===
 async function aceptarSolicitud(casoId){
-  if(!soyEquipoSOE()){ alert('⛔ Solo equipo SOE.'); return; }
+  const caso = casos.find(c => c.id === casoId);
+  if(!caso){ alert('Caso no encontrado.'); return; }
+  if(!puedoEditarCaso(caso) && !esAdminDirCoord()){ alert('⛔ Solo equipo SOE.'); return; }
+
+  // Si el que acepta es psicopedagoga, el trigger ya la asignó al INSERT, nada que preguntar.
+  // Si es admin/dir/coord/dev y el caso no tiene asignado_a, abrir modal para elegir psicopedagoga.
+  if(esAdminDirCoord() && !caso.asignado_a){
+    abrirModalAsignarAlAceptar(casoId);
+    return;
+  }
+
   if(!confirm('¿Aceptar esta solicitud y abrir el caso formalmente?\n\nEl docente que la envió seguirá siendo parte de "docentes involucrados" y podrá ver las entradas que marques como visibles.')) return;
+  await _ejecutarAceptacion(casoId, null);
+}
+
+async function _ejecutarAceptacion(casoId, nuevoAsignadoEmail){
   try {
-    const { error } = await sb.from('casos_soe').update({
+    const update = {
       estado: 'abierto',
       fecha_apertura: new Date().toISOString().slice(0,10),
       updated_at: new Date().toISOString()
-    }).eq('id', casoId);
+    };
+    if(nuevoAsignadoEmail) update.asignado_a = nuevoAsignadoEmail;
+    const { error } = await sb.from('casos_soe').update(update).eq('id', casoId);
     if(error){ alert('❌ ' + error.message); return; }
     const caso = casos.find(c => c.id === casoId);
-    if(caso) caso.estado = 'abierto';
+    if(caso){
+      caso.estado = 'abierto';
+      if(nuevoAsignadoEmail) caso.asignado_a = nuevoAsignadoEmail;
+    }
     document.querySelectorAll('.modal-overlay').forEach(m => m.remove());
     renderCasos();
     abrirCaso(casoId);
   } catch(e){ alert('❌ ' + e.message); }
 }
 
+function abrirModalAsignarAlAceptar(casoId){
+  const psicos = psicopedagogasDisponibles();
+  const caso = casos.find(c => c.id === casoId);
+  if(!caso) return;
+  const al = aMap[caso.alumno_id];
+  const gradoAl = al ? al.grado : '';
+  // Marcamos las psicopedagogas que tienen este grado en su scope
+  const html = `<div class="modal-overlay" onclick="if(event.target===this)this.remove()">
+    <div class="modal"><div class="modal-head"><h3>✓ Aceptar solicitud — Asignar psicopedagoga</h3><button class="modal-close" onclick="this.closest('.modal-overlay').remove()">✕</button></div>
+    <div class="modal-body">
+      <p style="font-size:12px;color:var(--text2);margin-bottom:10px">Antes de abrir el caso, elegí a qué psicopedagoga queda asignado. Las que tienen ${escH(gradoAl)} en su scope aparecen marcadas.</p>
+      <div class="form-row">
+        <label>Psicopedagoga asignada *</label>
+        <select id="asignPsico">
+          <option value="">— Elegir —</option>
+          ${psicos.map(p => `<option value="${escH(p.email)}">${escH(p.nombre)} — ${p.grados.join(', ')}${p.grados.includes(gradoAl) ? ' ✓ (cubre este grado)' : ''}</option>`).join('')}
+          <option value="__SIN__">Dejar sin asignar (decidir después)</option>
+        </select>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="this.closest('.modal-overlay').remove()">Cancelar</button>
+      <button class="btn btn-green" onclick="confirmarAceptacionConAsignacion('${casoId}')">✓ Aceptar y abrir caso</button>
+    </div></div></div>`;
+  document.body.insertAdjacentHTML('beforeend', html);
+}
+
+async function confirmarAceptacionConAsignacion(casoId){
+  const sel = document.getElementById('asignPsico').value;
+  if(!sel){ alert('Elegí una psicopedagoga (o "dejar sin asignar").'); return; }
+  const email = sel === '__SIN__' ? null : sel;
+  await _ejecutarAceptacion(casoId, email);
+}
+
 async function descartarSolicitud(casoId){
-  if(!soyEquipoSOE()){ alert('⛔ Solo equipo SOE.'); return; }
+  const caso = casos.find(c => c.id === casoId);
+  if(!caso){ alert('Caso no encontrado.'); return; }
+  if(!puedoEditarCaso(caso) && !esAdminDirCoord()){ alert('⛔ No tenés permiso para descartar este caso. Está asignado a otra psicopedagoga.'); return; }
   const motivo = prompt('¿Por qué descartás esta solicitud?\n\nEjemplos: "Alumno ya en seguimiento", "No corresponde al SOE", "Situación resuelta en el aula"\n\nEl motivo se guarda en el caso y el docente que derivó lo verá.');
   if(!motivo || motivo.trim().length < 10){ alert('Necesitás un motivo de al menos 10 caracteres.'); return; }
   try {
@@ -853,9 +970,9 @@ async function descartarSolicitud(casoId){
 
 // === DOCENTES INVOLUCRADOS ===
 function abrirModalAgregarDocente(casoId){
-  if(!soyEquipoSOE()){ alert('⛔ Solo equipo SOE.'); return; }
   const caso = casos.find(c => c.id === casoId);
-  if(!caso) return;
+  if(!caso){ alert('Caso no encontrado.'); return; }
+  if(!puedoEditarCaso(caso) && !esAdminDirCoord()){ alert('⛔ No tenés permiso para agregar docentes a este caso (está asignado a otra psicopedagoga).'); return; }
   const al = aMap[caso.alumno_id];
   const gradoAl = al ? al.grado : '';
   // Docentes del grado del alumno (titulares + materia)
@@ -909,6 +1026,73 @@ async function agregarDocenteInvolucrado(casoId){
     if(error){ alert('❌ ' + error.message); return; }
     caso.docentes_involucrados = nuevoArr;
     document.querySelectorAll('.modal-overlay').forEach(m => m.remove());
+    abrirCaso(casoId);
+  } catch(e){ alert('❌ ' + e.message); }
+}
+
+function abrirModalReasignarPsico(casoId){
+  if(!esAdminDirCoord()){ alert('⛔ Solo Dirección/Coord/Admin pueden reasignar.'); return; }
+  const caso = casos.find(c => c.id === casoId);
+  if(!caso) return;
+  const al = aMap[caso.alumno_id];
+  const gradoAl = al ? al.grado : '';
+  const psicos = psicopedagogasDisponibles();
+  const actual = caso.asignado_a;
+  const html = `<div class="modal-overlay" onclick="if(event.target===this)this.remove()">
+    <div class="modal"><div class="modal-head"><h3>🔄 ${actual ? 'Reasignar' : 'Asignar'} psicopedagoga</h3><button class="modal-close" onclick="this.closest('.modal-overlay').remove()">✕</button></div>
+    <div class="modal-body">
+      <p style="font-size:12px;color:var(--text2);margin-bottom:10px">Alumno: <strong>${al ? escH(al.nombre) : '—'}</strong> · ${escH(gradoAl)}<br>${actual ? `Asignada actualmente a: <strong>${escH(nombrePsicopedagoga(actual))}</strong>` : 'Sin asignar.'}</p>
+      <div class="form-row">
+        <label>Nueva asignación</label>
+        <select id="reasignPsico">
+          <option value="">— Elegir —</option>
+          ${psicos.map(p => {
+            const esActual = p.email === actual;
+            return `<option value="${escH(p.email)}" ${esActual ? 'disabled' : ''}>${escH(p.nombre)} — ${p.grados.join(', ')}${p.grados.includes(gradoAl) ? ' ✓' : ''}${esActual ? ' (actual)' : ''}</option>`;
+          }).join('')}
+          <option value="__SIN__">Dejar sin asignar</option>
+        </select>
+      </div>
+      <div class="form-row">
+        <label>Motivo del cambio (opcional)</label>
+        <input type="text" id="reasignMotivo" placeholder="Ej: cambio de scope, licencia de la anterior, etc.">
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="this.closest('.modal-overlay').remove()">Cancelar</button>
+      <button class="btn btn-green" onclick="confirmarReasignacion('${casoId}')">🔄 Guardar</button>
+    </div></div></div>`;
+  document.body.insertAdjacentHTML('beforeend', html);
+}
+
+async function confirmarReasignacion(casoId){
+  const sel = document.getElementById('reasignPsico').value;
+  if(!sel){ alert('Elegí una psicopedagoga (o "dejar sin asignar").'); return; }
+  const email = sel === '__SIN__' ? null : sel;
+  const motivo = document.getElementById('reasignMotivo').value.trim();
+  try {
+    const { error } = await sb.from('casos_soe').update({
+      asignado_a: email,
+      updated_at: new Date().toISOString()
+    }).eq('id', casoId);
+    if(error){ alert('❌ ' + error.message); return; }
+    const caso = casos.find(c => c.id === casoId);
+    if(caso) caso.asignado_a = email;
+    // Opcional: dejar registro como entrada del caso
+    if(motivo){
+      try {
+        await sb.from('casos_soe_entradas').insert({
+          caso_id: casoId,
+          fecha: new Date().toISOString().slice(0,10),
+          tipo: 'otro',
+          descripcion: `[Reasignación de psicopedagoga] ${motivo}${email ? ' — Nueva: ' + nombrePsicopedagoga(email) : ' — Dejado sin asignar'}`,
+          registrado_por: usuarioActual.id,
+          visible_para_docente: false
+        });
+      } catch(_){}
+    }
+    document.querySelectorAll('.modal-overlay').forEach(m => m.remove());
+    renderCasos();
     abrirCaso(casoId);
   } catch(e){ alert('❌ ' + e.message); }
 }
